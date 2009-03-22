@@ -40,6 +40,7 @@ class QueueCollection(private val queueFolder: String, private var queueConfigs:
   }
 
   private val queues = new mutable.HashMap[String, PersistentQueue]
+  private val fanout_queues = new mutable.HashMap[String, mutable.HashSet[String]]
   private var shuttingDown = false
 
   // total of all data in all queues
@@ -68,6 +69,13 @@ class QueueCollection(private val queueFolder: String, private var queueConfigs:
     }
   }
 
+  // look for any saved queues with a + in them and set them up as fanout queues
+  for (fn <- path.list()) {
+    if(fn contains '+'){
+      queue(fn)
+    }
+  }
+
 
   def queueNames: List[String] = synchronized {
     queues.keys.toList
@@ -92,6 +100,15 @@ class QueueCollection(private val queueFolder: String, private var queueConfigs:
           setup = true
           val q = new PersistentQueue(path.getPath, name, queueConfigs.configMap(name))
           queues(name) = q
+          if (name contains '+') {
+            var master = name.split('+')(0)
+            if(!fanout_queues.contains(master)){
+              fanout_queues(master) = new mutable.HashSet[String]
+            }
+            fanout_queues(master) += name
+            log.info("Fanout queue %s added to %s", name, master)
+          }
+
           Some(q)
       }
     }
@@ -118,6 +135,11 @@ class QueueCollection(private val queueFolder: String, private var queueConfigs:
    *     down
    */
   def add(key: String, item: Array[Byte], expiry: Int): Boolean = {
+    if(fanout_queues.contains(key)){
+      for (name <- fanout_queues(key)) {
+        add(name, item, expiry)
+      }
+    }
     queue(key) match {
       case None => false
       case Some(q) =>

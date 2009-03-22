@@ -145,6 +145,11 @@ class KestrelHandler(val session: IoSession, val config: Config) extends Actor {
         if (opt == "open") opening = true
       }
     }
+
+    if(key contains '+') {
+      Kestrel.queues.queue(key)
+    }
+
     log.debug("get -> q=%s t=%d open=%s close=%s", key, timeout, opening, closing)
 
     if (key.length == 0) {
